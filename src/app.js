@@ -12,6 +12,8 @@ import { rateLimitConfig } from "./config/env.js";
 
 import routes from "./routers/index.js";
 
+import { errorHandler } from './middleware/errorMiddleware.js';
+
 const app = express();
 
 app.use(helmet());
@@ -31,5 +33,7 @@ app.use("/api/v1", routes);
 app.get("/", (req, res) => {
   res.json({ status: "ok", message: "Scene service is up" });
 });
+
+app.use(errorHandler)
 
 export default app;

@@ -57,8 +57,12 @@ export async function gracefulShutdown(server) {
     console.log('Disconnecting database...');
 
     try {
-      await prisma.$disconnect();
-      console.log('Database disconnected');
+      if (AppDataSource.isInitialized) {
+        await AppDataSource.destroy();
+        console.log('Database disconnected');
+      } else {
+        console.log('Database was not initialized');
+      }
     } catch (error) {
       console.log(`Error disconnecting database: ${error.message}`);
     }
