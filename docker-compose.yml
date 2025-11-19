@@ -5,32 +5,19 @@ networks:
     external: true
 
 services:
-  service-name:
+  scene:
     build:
       context: .
       target: development
-    container_name: anivoy-service-name
+    container_name: anivoy-scene-service
     ports:
-      - "5080:5080"
+      - "5088:5088"
     env_file:
       - .env
     depends_on:
-      - postgres
+      - postgis
       - redis
     restart: unless-stopped
     networks:
       - anivoy-shared-net
-
-  service-cron:
-    build:
-      context: .
-      target: production
-    container_name: anivoy-service-name-cron
-    command: ["npm", "run", "cron"]
-    env_file:
-      - .env
-    depends_on:
-      - postgres
-    restart: unless-stopped
-    networks:
-      - anivoy-shared-net
+  

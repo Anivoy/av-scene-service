@@ -1,0 +1,14 @@
+model Difficulty {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  multiplier  Float    @default(1.0)
+  description String?
+  colorCode   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  shows  Show[]
+  scenes Scene[]
+
+  @@map("difficulties")
+}

@@ -1,23 +1,12 @@
-import AppDataSource from '../db/index.js';
-import { In } from 'typeorm';
-
-import { Show } from '../entities/Show.js';
-import { Genre } from '../entities/Genre.js';
-import { Difficulty } from '../entities/Difficulty.js';
-import { Season } from '../entities/Season.js';
+import prisma from '../db/index.js';
 
 import { logger } from '../config/logger.js';
-import { AppError } from '../utils/errorUtility.js'
+import { AppError } from '../utils/errorUtility.js';
 
-export async function createShow(data) {
+async function createShow(data) {
   logger.info('Creating new show', { title: data.title });
 
-  const showRepository = AppDataSource.getRepository(Show);
-  const genreRepository = AppDataSource.getRepository(Genre);
-  const difficultyRepository = AppDataSource.getRepository(Difficulty);
-  const seasonRepository = AppDataSource.getRepository(Season);
-
-  const existingShow = await showRepository.findOne({
+  const existingShow = await prisma.show.findUnique({
     where: { title: data.title },
   });
 
@@ -26,76 +15,62 @@ export async function createShow(data) {
     throw new AppError('Show with this title already exists', 400);
   }
 
-  const show = showRepository.create({
-    title: data.title,
-    alternativeTitle: data.alternativeTitle,
-    synopsis: data.synopsis,
-    type: data.type,
+  const show = await prisma.show.create({
+    data: {
+      title: data.title,
+      alternativeTitle: data.alternativeTitle,
+      synopsis: data.synopsis,
+      type: data.type,
+      difficultyId: data.difficultyId || null,
+      seasonId: data.seasonId || null,
+      genres: data.genreIds
+        ? { connect: data.genreIds.map((id) => ({ id })) }
+        : undefined,
+    },
+    include: {
+      genres: true,
+      difficulty: true,
+      season: true,
+    },
   });
 
-  if (data.genreIds && data.genreIds.length > 0) {
-    const genres = await genreRepository.findBy({
-      id: In(data.genreIds),
-    });
-    show.genres = genres;
-  }
+  logger.info('Show created successfully', { id: show.id });
+  return show;
+}
 
-  if (data.difficultyId) {
-    const difficulty = await difficultyRepository.findOne({
-      where: { id: data.difficultyId },
-    });
-    if (difficulty) {
-      show.difficulty = difficulty;
-    }
-  }
-
-  if (data.seasonId) {
-    const season = await seasonRepository.findOne({
-      where: { id: data.seasonId },
-    });
-    if (season) {
-      show.season = season;
-    }
-  }
-
-  const savedShow = await showRepository.save(show);
-  logger.info('Show created successfully', { id: savedShow.id });
-
-  return showRepository.findOne({
-    where: { id: savedShow.id },
-    relations: ['genres', 'difficulty', 'season'],
-  });
-};
-
-export async function getShowById(id) {
+async function getShowById(id) {
   logger.info('Fetching show by id', { id });
 
-  const showRepository = AppDataSource.getRepository(Show);
-
-  const show = await showRepository.findOne({
+  const show = await prisma.show.findUnique({
     where: { id },
-    relations: ['genres', 'difficulty', 'season'],
+    include: {
+      genres: true,
+      difficulty: true,
+      season: true,
+    },
   });
 
   if (!show) {
     logger.warn('Show not found', { id });
-    throw new AppError('Show not found', 400);
+    throw new AppError('Show not found', 404);
   }
 
   return show;
-};
+}
 
-export async function getShowByIds(ids) {
-  logger.info('Fetching show by ids', { ids });
+async function getShowByIds(ids) {
+  logger.info('Fetching shows by ids', { ids });
 
-  const showRepository = AppDataSource.getRepository(Show);
-
-  const shows = await showRepository.find({
-    where: In(ids),
-    relations: ['genres', 'difficulty', 'season'],
+  const shows = await prisma.show.findMany({
+    where: { id: { in: ids } },
+    include: {
+      genres: true,
+      difficulty: true,
+      season: true,
+    },
   });
 
-  if (shows === 0) {
+  if (!shows.length) {
     logger.warn('Shows not found', { ids });
     throw new AppError('Shows not found', 404);
   }
@@ -103,37 +78,113 @@ export async function getShowByIds(ids) {
   return shows;
 }
 
-export async function listShows(query) {
-  logger.info('Listing shows', { query });
+async function listShows(query) {
+  const {
+    page = 1,
+    limit = 10,
+    type,
+    search,
+    sortBy = 'createdAt',
+    sortOrder = 'desc',
+    title,
+    alternativeTitle,
+    difficultyName,
+    seasonName,
+    seasonYear,
+    seasonQuarter,
+    genreName,
+  } = query;
 
-  const showRepository = AppDataSource.getRepository(Show);
-
-  const { page, limit, search, type, sortBy, sortOrder } = query;
   const skip = (page - 1) * limit;
 
-  const queryBuilder = showRepository
-    .createQueryBuilder('show')
-    .leftJoinAndSelect('show.genres', 'genres')
-    .leftJoinAndSelect('show.difficulty', 'difficulty')
-    .leftJoinAndSelect('show.season', 'season');
+  const where = {
+    AND: [
+      search
+        ? {
+            OR: [
+              { title: { contains: search, mode: 'insensitive' } },
+              { alternativeTitle: { contains: search, mode: 'insensitive' } },
+            ],
+          }
+        : undefined,
+      title ? { title: { contains: title, mode: 'insensitive' } } : undefined,
+      alternativeTitle
+        ? { alternativeTitle: { contains: alternativeTitle, mode: 'insensitive' } }
+        : undefined,
+      type ? { type } : undefined,
+      difficultyName
+        ? { difficulty: { name: { contains: difficultyName, mode: 'insensitive' } } }
+        : undefined,
+      seasonName
+        ? { season: { name: { contains: seasonName, mode: 'insensitive' } } }
+        : undefined,
+      seasonYear ? { season: { year: Number(seasonYear) } } : undefined,
+      seasonQuarter ? { season: { quarter: seasonQuarter } } : undefined,
+      genreName
+        ? {
+            genres: {
+              some: {
+                name: {
+                  in: Array.isArray(genreName)
+                    ? genreName.map((g) => g.trim())
+                    : genreName
+                        .split(',')
+                        .map((g) => g.trim())
+                        .filter(Boolean),
+                  mode: 'insensitive',
+                },
+              },
+            },
+          }
+        : undefined,
+    ].filter(Boolean),
+  };
 
-  if (search) {
-    queryBuilder.where(
-      '(show.title ILIKE :search OR show.alternativeTitle ILIKE :search)',
-      { search: `%${search}%` }
-    );
-  }
+  const allowedSortFields = [
+    'title',
+    'type',
+    'createdAt',
+    'updatedAt',
+    'alternativeTitle',
+  ];
+  const safeSortBy = allowedSortFields.includes(sortBy) ? sortBy : 'createdAt';
 
-  if (type) {
-    queryBuilder.andWhere('show.type = :type', { type });
-  }
-
-  queryBuilder
-    .orderBy(`show.${sortBy}`, sortOrder)
-    .skip(skip)
-    .take(limit);
-
-  const [shows, total] = await queryBuilder.getManyAndCount();
+  const [shows, total] = await Promise.all([
+    prisma.show.findMany({
+      where,
+      select: {
+        id: true,
+        title: true,
+        alternativeTitle: true,
+        synopsis: true,
+        type: true,
+        createdAt: true,
+        updatedAt: true,
+        difficulty: {
+          select: {
+            name: true,
+            colorCode: true,
+          },
+        },
+        season: {
+          select: {
+            name: true,
+            year: true,
+            quarter: true,
+          },
+        },
+        genres: {
+          select: {
+            name: true,
+          },
+        },
+      },
+      skip,
+      take: limit,
+      orderBy: { [safeSortBy]: sortOrder },
+    }),
+    prisma.show.count({ where }),
+  ]);
 
   logger.info('Shows fetched successfully', { count: shows.length, total });
 
@@ -146,123 +197,102 @@ export async function listShows(query) {
       totalPages: Math.ceil(total / limit),
     },
   };
-};
+}
 
-export async function updateShow(id, data) {
+async function updateShow(id, data) {
   logger.info('Updating show', { id, data });
 
-  const showRepository = AppDataSource.getRepository(Show);
-  const genreRepository = AppDataSource.getRepository(Genre);
-  const difficultyRepository = AppDataSource.getRepository(Difficulty);
-  const seasonRepository = AppDataSource.getRepository(Season);
-
-  const show = await showRepository.findOne({
+  const existingShow = await prisma.show.findUnique({
     where: { id },
-    relations: ['genres', 'difficulty', 'season'],
+    include: { genres: true, difficulty: true, season: true },
   });
 
-  if (!show) {
+  if (!existingShow) {
     logger.warn('Show not found', { id });
     throw new AppError('Show not found', 404);
   }
 
-  if (data.title && data.title !== show.title) {
-    const existingShow = await showRepository.findOne({
+  if (data.title && data.title !== existingShow.title) {
+    const duplicate = await prisma.show.findUnique({
       where: { title: data.title },
     });
-
-    if (existingShow) {
+    if (duplicate) {
       logger.warn('Show with this title already exists', { title: data.title });
       throw new AppError('Show with this title already exists', 400);
     }
   }
 
-  if (data.title !== undefined) show.title = data.title;
-  if (data.alternativeTitle !== undefined) show.alternativeTitle = data.alternativeTitle;
-  if (data.synopsis !== undefined) show.synopsis = data.synopsis;
-  if (data.type !== undefined) show.type = data.type;
-
-  if (data.genreIds !== undefined) {
-    if (data.genreIds.length > 0) {
-      const genres = await genreRepository.findBy({
-        id: In(data.genreIds),
-      });
-      show.genres = genres;
-    } else {
-      show.genres = [];
-    }
-  }
-
-  if (data.difficultyId !== undefined) {
-    if (data.difficultyId) {
-      const difficulty = await difficultyRepository.findOne({
-        where: { id: data.difficultyId },
-      });
-      show.difficulty = difficulty || null;
-    } else {
-      show.difficulty = null;
-    }
-  }
-
-  if (data.seasonId !== undefined) {
-    if (data.seasonId) {
-      const season = await seasonRepository.findOne({
-        where: { id: data.seasonId },
-      });
-      show.season = season || null;
-    } else {
-      show.season = null;
-    }
-  }
-
-  await showRepository.save(show);
-  logger.info('Show updated successfully', { id });
-
-  return showRepository.findOne({
+  const updated = await prisma.show.update({
     where: { id },
-    relations: ['genres', 'difficulty', 'season'],
+    data: {
+      title: data.title ?? existingShow.title,
+      alternativeTitle: data.alternativeTitle ?? existingShow.alternativeTitle,
+      synopsis: data.synopsis ?? existingShow.synopsis,
+      type: data.type ?? existingShow.type,
+      difficultyId:
+        data.difficultyId !== undefined ? data.difficultyId : existingShow.difficultyId,
+      seasonId: data.seasonId !== undefined ? data.seasonId : existingShow.seasonId,
+      genres:
+        data.genreIds !== undefined
+          ? {
+              set: [],
+              connect: data.genreIds.map((id) => ({ id })),
+            }
+          : undefined,
+    },
+    include: {
+      genres: true,
+      difficulty: true,
+      season: true,
+    },
   });
-};
 
-export async function deleteShow(id) {
+  logger.info('Show updated successfully', { id });
+  return updated;
+}
+
+async function deleteShow(id) {
   logger.info('Deleting show', { id });
 
-  const showRepository = AppDataSource.getRepository(Show);
+  const existingShow = await prisma.show.findUnique({ where: { id } });
 
-  const show = await showRepository.findOne({
-    where: { id },
-  });
-
-  if (!show) {
+  if (!existingShow) {
     logger.warn('Show not found', { id });
     throw new AppError('Show not found', 404);
   }
 
-  await showRepository.remove(show);
+  await prisma.show.delete({ where: { id } });
   logger.info('Show deleted successfully', { id });
 
   return { message: 'Show deleted successfully' };
-};
+}
 
-export async function deleteMultipleShows(ids) {
-  logger.info('Deleting multiple shows', { ids, count: ids.length });
+async function deleteMultipleShows(ids) {
+  logger.info('Deleting multiple shows', { ids });
 
-  const showRepository = AppDataSource.getRepository(Show);
-
-  const shows = await showRepository.findBy({
-    id: In(ids),
+  const deleted = await prisma.show.deleteMany({
+    where: { id: { in: ids } },
   });
 
-  if (shows.length === 0) {
+  if (!deleted.count) {
     logger.warn('No shows found with provided IDs');
     throw new AppError('No shows found with provided IDs', 404);
   }
 
-  await showRepository.remove(shows);
-  logger.info('Shows deleted successfully', { deletedCount: shows.length });
+  logger.info('Shows deleted successfully', { deletedCount: deleted.count });
 
   return {
-    message: `${shows.length} show(s) deleted successfully`,
-    deletedCount: shows.length,
+    message: `${deleted.count} show(s) deleted successfully`,
+    deletedCount: deleted.count,
   };
+}
+
+export default {
+  createShow,
+  listShows,
+  getShowById,
+  getShowByIds,
+  updateShow,
+  deleteShow,
+  deleteMultipleShows,
 };

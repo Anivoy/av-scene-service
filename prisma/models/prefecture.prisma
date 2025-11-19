@@ -1,0 +1,14 @@
+model Prefecture {
+  id   String @id @default(uuid())
+  name String @unique
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  scenes Scene[]
+  cities City[]
+
+  region   Region  @relation(fields: [regionId], references: [id], onDelete: Cascade)
+  regionId String
+
+  @@map("prefectures")
+}

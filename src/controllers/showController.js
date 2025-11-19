@@ -10,9 +10,9 @@ import {
 export async function createShow(req, res, next) {
   try {
     const validatedData = createShowSchema.parse(req.body);
-    
+
     const show = await showService.createShow(validatedData);
-    
+
     return res.status(201).json({
       success: true,
       message: 'Show created successfully',
@@ -26,27 +26,57 @@ export async function createShow(req, res, next) {
 export async function listShows(req, res, next) {
   try {
     const validatedQuery = listShowsQuerySchema.parse(req.query);
-    
+
     const result = await showService.listShows(validatedQuery);
-    
+
     return res.status(200).json({
       success: true,
       data: result.data,
       meta: result.meta,
     });
   } catch (error) {
-    next(error)
+    next(error);
   }
 };
 
-export async function updateShow (req, res, next) {
+export async function getShowById(req, res, next) {
   try {
     const validatedId = idParamSchema.parse(req.params.id);
-    
+
+    const result = await showService.getShowById(validatedId);
+
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export async function getShowByIds(req, res, next) {
+  try {
+    const validatedIds = idsParamSchema.parse(req.body.ids);
+
+    const result = await showService.getShowByIds(validatedIds)
+
+    return res.status(200).json({
+      success: true,
+      data: result,
+    })
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function updateShow(req, res, next) {
+  try {
+    const validatedId = idParamSchema.parse(req.params.id);
+
     const validatedData = updateShowSchema.parse(req.body);
-    
+
     const show = await showService.updateShow(validatedId, validatedData);
-    
+
     return res.status(200).json({
       success: true,
       message: 'Show updated successfully',
@@ -57,12 +87,12 @@ export async function updateShow (req, res, next) {
   }
 };
 
-export async function deleteShow (req, res, next) {
+export async function deleteShow(req, res, next) {
   try {
     const validatedId = idParamSchema.parse(req.params.id);
-    
+
     const result = await showService.deleteShow(validatedId);
-    
+
     return res.status(200).json({
       success: true,
       message: result.message,
@@ -74,10 +104,10 @@ export async function deleteShow (req, res, next) {
 
 export async function deleteMultipleShows(req, res, next) {
   try {
-    const validatedIds = idsParamSchema.parse(req.params.ids);
-    
+    const validatedIds = idsParamSchema.parse(req.body.ids);
+
     const result = await showService.deleteMultipleShows(validatedIds);
-    
+
     return res.status(200).json({
       success: true,
       message: result.message,

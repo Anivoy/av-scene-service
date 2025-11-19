@@ -1,0 +1,20 @@
+model Season {
+  id        String        @id @default(uuid())
+  name      String
+  year      Int
+  quarter   SeasonQuarter
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  shows Show[]
+
+  @@unique([year, quarter], name: "IDX_season_year_quarter")
+  @@map("seasons")
+}
+
+enum SeasonQuarter {
+  Winter
+  Spring
+  Summer
+  Fall
+}

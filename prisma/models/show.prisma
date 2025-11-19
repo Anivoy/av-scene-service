@@ -1,0 +1,23 @@
+model Show {
+  id               String    @id @default(uuid())
+  title            String    @unique
+  alternativeTitle String?
+  synopsis         String?
+  type             ShowType?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  genres       Genre[]     @relation("ShowGenres")
+  scenes       Scene[]
+  difficulty   Difficulty? @relation(fields: [difficultyId], references: [id])
+  difficultyId String?
+  season       Season?     @relation(fields: [seasonId], references: [id])
+  seasonId     String?
+
+  @@map("shows")
+}
+
+enum ShowType {
+  Movie
+  Series
+}

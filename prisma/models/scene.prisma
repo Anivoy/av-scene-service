@@ -1,0 +1,30 @@
+model Scene {
+  id          String      @id @default(uuid())
+  name        String
+  description String?
+  latitude    Float
+  longitude   Float
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  randomKey   Float       @default(dbgenerated("random()")) @db.DoublePrecision
+
+  showId      String
+  show        Show        @relation(fields: [showId], references: [id], onDelete: Cascade)
+
+  difficultyId String
+  difficulty   Difficulty  @relation(fields: [difficultyId], references: [id])
+
+  cityId       String?
+  city         City?       @relation(fields: [cityId], references: [id])
+
+  prefectureId String?
+  prefecture   Prefecture? @relation(fields: [prefectureId], references: [id])
+
+  regionId     String?
+  region       Region?     @relation(fields: [regionId], references: [id])
+
+  images SceneImage[]
+
+  @@index([randomKey])
+  @@map("scenes")
+}
