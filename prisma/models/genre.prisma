@@ -1,0 +1,12 @@
+model Genre {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt DateTime?
+
+  shows Show[] @relation("ShowGenres")
+
+  @@map("genres")
+}

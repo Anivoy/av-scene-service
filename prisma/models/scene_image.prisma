@@ -1,0 +1,12 @@
+model SceneImage {
+  id   String  @id @default(uuid())
+  path String
+  alt  String?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  scene   Scene  @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+  sceneId String
+
+  @@map("scene_images")
+}

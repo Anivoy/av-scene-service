@@ -1,17 +1,57 @@
-# Stage 1: Builder
-FROM node:20-alpine AS base
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci
-COPY . .
+# ----------------------
+# Base Stage
+# ----------------------
+FROM node:22-alpine AS base
 
-# Stage 2: Development
-FROM base AS development
-ENV NODE_ENV=development
-CMD ["npm", "run", "dev"]
+# Clean app directory if exists
+RUN rm -rf /app && mkdir /app
 
-# Stage 3: Production
-FROM base AS production
+# Set environment variables (default to production)
 ENV NODE_ENV=production
-RUN npm prune --omit=dev
-CMD ["npm", "start"]
+
+# Set working directory
+WORKDIR /app
+
+# Install dependencies
+COPY package*.json /app/
+RUN npm ci && npm cache clean --force
+
+# Copy prisma schema so prisma commands work
+COPY prisma ./prisma
+
+# Generate prisma client
+RUN npx prisma generate
+
+# ----------------------
+# Development stage
+# ----------------------
+FROM base AS development
+
+# Set environment variables to development
+ENV NODE_ENV=development
+
+# Copy source code
+COPY . /app/
+
+# Expose dev port
+EXPOSE 7200
+
+# Run migrations before start
+CMD [ "sh", "-c", "npx prisma migrate deploy && npm start" ]
+
+# ----------------------
+# Production Stage
+# ----------------------
+FROM base AS production
+
+# Set environment variables to production
+ENV NODE_ENV=production
+
+# Copy source code
+COPY . /app/
+
+# Expose dev port
+EXPOSE 7200
+
+# Run migrations before start
+CMD [ "sh", "-c", "npx prisma migrate deploy && npm start" ]
