@@ -1,4 +1,4 @@
-import prisma from "../db/index.js"
+import prisma from '../db/index.js';
 
 import { logger } from '../config/logger.js';
 import { AppError } from '../utils/errorUtility.js';
@@ -67,7 +67,7 @@ async function listDifficulties(query) {
     sortOrder = 'desc',
   } = query;
 
-  const skip = (page - 1) * limit;
+  const fetchAll = !limit || limit === 0;
 
   const where = search
     ? {
@@ -77,6 +77,17 @@ async function listDifficulties(query) {
         ],
       }
     : {};
+
+  if (fetchAll) {
+    const difficulties = await prisma.difficulty.findMany({
+      where,
+      orderBy: { [sortBy]: sortOrder },
+    });
+
+    return { data: difficulties };
+  }
+
+  const skip = (page - 1) * limit;
 
   const [difficulties, total] = await Promise.all([
     prisma.difficulty.findMany({

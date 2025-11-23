@@ -1,4 +1,4 @@
-import prisma from "../db/index.js"
+import prisma from '../db/index.js';
 
 import { logger } from '../config/logger.js';
 import { AppError } from '../utils/errorUtility.js';
@@ -65,7 +65,7 @@ async function listGenres(query) {
     sortOrder = 'desc',
   } = query;
 
-  const skip = (page - 1) * limit;
+  const fetchAll = !limit || limit === 0;
 
   const where = search
     ? {
@@ -75,6 +75,17 @@ async function listGenres(query) {
         ],
       }
     : {};
+
+  if (fetchAll) {
+    const genres = await prisma.genre.findMany({
+      where,
+      orderBy: { [sortBy]: sortOrder },
+    });
+
+    return { data: genres };
+  }
+
+  const skip = (page - 1) * limit;
 
   const [genres, total] = await Promise.all([
     prisma.genre.findMany({

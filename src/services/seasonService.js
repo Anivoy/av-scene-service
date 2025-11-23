@@ -8,7 +8,7 @@ async function createSeason(data) {
 
   const existingSeason = await prisma.season.findUnique({
     where: {
-      year_quarter: {
+      IDX_season_year_quarter: {
         year: data.year,
         quarter: data.quarter,
       },
@@ -64,7 +64,7 @@ async function listSeasons(query) {
     sortOrder = 'desc',
   } = query;
 
-  const skip = (page - 1) * limit;
+  const fetchAll = !limit || limit === 0;
 
   const where = search
     ? {
@@ -79,6 +79,17 @@ async function listSeasons(query) {
         ],
       }
     : {};
+
+  if (fetchAll) {
+    const seasons = await prisma.season.findMany({
+      where,
+      orderBy: { [sortBy]: sortOrder },
+    });
+
+    return { data: seasons };
+  }
+
+  const skip = (page - 1) * limit;
 
   const [seasons, total] = await Promise.all([
     prisma.season.findMany({
@@ -112,7 +123,7 @@ async function updateSeason(id, data) {
 
   const existingSeason = await prisma.season.findUnique({
     where: {
-      year_quarter: { year, quarter },
+      IDX_season_year_quarter: { year, quarter },
     },
   });
 

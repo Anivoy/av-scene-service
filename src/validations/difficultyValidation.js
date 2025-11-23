@@ -21,6 +21,6 @@ export const listDifficultiesQuerySchema = z.object({
   page: z.string().regex(/^\d+$/).transform(Number).optional().default(1),
   limit: z.string().regex(/^\d+$/).transform(Number).optional().default(10),
   search: z.string().optional(),
-  sortBy: z.enum(['name', 'createdAt', 'updatedAt']).optional().default('createdAt'),
+  sortBy: z.enum(['name', 'multiplier', 'createdAt', 'updatedAt']).optional().default('createdAt'),
   sortOrder: z.enum(['asc', 'desc']).optional().default('desc'),
 });

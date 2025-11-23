@@ -162,12 +162,14 @@ async function listShows(query) {
         updatedAt: true,
         difficulty: {
           select: {
+            id: true,
             name: true,
             colorCode: true,
           },
         },
         season: {
           select: {
+            id: true,
             name: true,
             year: true,
             quarter: true,
@@ -175,6 +177,7 @@ async function listShows(query) {
         },
         genres: {
           select: {
+            id: true,
             name: true,
           },
         },
