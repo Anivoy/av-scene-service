@@ -11,7 +11,7 @@ services:
       target: development
     container_name: anivoy-scene-service
     ports:
-      - "5088:5088"
+      - "7200:7200"
     env_file:
       - .env
     depends_on:
