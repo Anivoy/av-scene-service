@@ -5,6 +5,7 @@ model Season {
   quarter   SeasonQuarter
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
+  deletedAt DateTime?
 
   shows Show[]
 

@@ -6,13 +6,15 @@ model Scene {
   longitude   Float
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
+  deletedAt DateTime?
+
   randomKey   Float       @default(dbgenerated("random()")) @db.DoublePrecision
 
   showId      String
-  show        Show        @relation(fields: [showId], references: [id], onDelete: Cascade)
+  show        Show        @relation(fields: [showId], references: [id], onDelete: Restrict)
 
   difficultyId String
-  difficulty   Difficulty  @relation(fields: [difficultyId], references: [id])
+  difficulty   Difficulty  @relation(fields: [difficultyId], references: [id], onDelete: Restrict)
 
   cityId       String?
   city         City?       @relation(fields: [cityId], references: [id])
