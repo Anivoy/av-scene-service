@@ -14,9 +14,6 @@ services:
       - "7200:7200"
     env_file:
       - .env
-    depends_on:
-      - postgis
-      - redis
     restart: unless-stopped
     networks:
       - anivoy-shared-net
