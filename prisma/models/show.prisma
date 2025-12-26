@@ -1,6 +1,7 @@
 model Show {
   id               String    @id @default(uuid())
   title            String    @unique
+  cover            String?
   alternativeTitle String?
   synopsis         String?
   type             ShowType?

@@ -25,7 +25,7 @@ model Scene {
   regionId     String?
   region       Region?     @relation(fields: [regionId], references: [id])
 
-  images SceneImage[]
+  imagePairs        SceneImagePair?
 
   @@index([randomKey])
   @@map("scenes")

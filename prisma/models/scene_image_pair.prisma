@@ -1,0 +1,12 @@
+model SceneImagePair {
+  id            String   @id @default(uuid())
+  snippetPath   String
+  referencePath String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  scene   Scene  @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+  sceneId String @unique
+
+  @@map("scene_image_pairs")
+}
