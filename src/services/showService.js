@@ -1,9 +1,12 @@
 import prisma from '../db/index.js';
-
+import { v4 as uuidv4 } from 'uuid';
+import path from 'path';
+import slugify from 'slugify';
 import { logger } from '../config/logger.js';
 import { AppError } from '../utils/errorUtility.js';
+import { uploadFile } from '../utils/fileUtility.js';
 
-async function createShow(data) {
+async function createShow(data, file) {
   logger.info('Creating new show', { title: data.title });
 
   const existingShow = await prisma.show.findUnique({
@@ -15,10 +18,36 @@ async function createShow(data) {
     throw new AppError('Show with this title already exists', 400);
   }
 
+  const showId = uuidv4();
+
+  let cover;
+  if (file) {
+    const ext = path.extname(file.originalname);
+    const slug = slugify(data.title, {
+      lower: true,
+      strict: true,
+    });
+    const unique = uuidv4().split('-')[0];
+    const newFileName = `${slug}-${unique}${ext}`;
+    const fileWithSecureName = { ...file, originalname: newFileName };
+    const uploaded = await uploadFile(fileWithSecureName, `shows`, {
+      public: true,
+      signed: false,
+    });
+
+    if (!uploaded?.url) {
+      throw new AppError('Failed to upload file.', 400);
+    } else {
+      cover = uploaded.url;
+    }
+  }
+
   const show = await prisma.show.create({
     data: {
+      id: showId,
       title: data.title,
       alternativeTitle: data.alternativeTitle,
+      cover,
       synopsis: data.synopsis,
       type: data.type,
       difficultyId: data.difficultyId || null,
@@ -95,7 +124,7 @@ async function listShows(query) {
     genreName,
   } = query;
 
-  const skip = (page - 1) * limit;
+  const fetchAll = !limit || limit === 0;
 
   const where = {
     AND: [
@@ -147,41 +176,57 @@ async function listShows(query) {
     'updatedAt',
     'alternativeTitle',
   ];
+
   const safeSortBy = allowedSortFields.includes(sortBy) ? sortBy : 'createdAt';
+
+  const select = {
+    id: true,
+    title: true,
+    alternativeTitle: true,
+    cover: true,
+    synopsis: true,
+    type: true,
+    createdAt: true,
+    updatedAt: true,
+    difficulty: {
+      select: {
+        id: true,
+        name: true,
+        colorCode: true,
+      },
+    },
+    season: {
+      select: {
+        id: true,
+        name: true,
+        year: true,
+        quarter: true,
+      },
+    },
+    genres: {
+      select: {
+        id: true,
+        name: true,
+      },
+    },
+  };
+
+  if (fetchAll) {
+    const shows = await prisma.show.findMany({
+      where,
+      select,
+      orderBy: { [safeSortBy]: sortOrder },
+    });
+
+    return { data: shows };
+  }
+
+  const skip = (page - 1) * limit;
 
   const [shows, total] = await Promise.all([
     prisma.show.findMany({
       where,
-      select: {
-        id: true,
-        title: true,
-        alternativeTitle: true,
-        synopsis: true,
-        type: true,
-        createdAt: true,
-        updatedAt: true,
-        difficulty: {
-          select: {
-            id: true,
-            name: true,
-            colorCode: true,
-          },
-        },
-        season: {
-          select: {
-            id: true,
-            name: true,
-            year: true,
-            quarter: true,
-          },
-        },
-        genres: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-      },
+      select,
       skip,
       take: limit,
       orderBy: { [safeSortBy]: sortOrder },
@@ -202,7 +247,7 @@ async function listShows(query) {
   };
 }
 
-async function updateShow(id, data) {
+async function updateShow(id, data, file) {
   logger.info('Updating show', { id, data });
 
   const existingShow = await prisma.show.findUnique({
@@ -225,22 +270,44 @@ async function updateShow(id, data) {
     }
   }
 
+  let cover;
+  if (file) {
+    const ext = path.extname(file.originalname);
+    const fileWithSecureName = { ...file, originalname: `${uuidv4()}${ext}` };
+    const uploaded = await uploadFile(fileWithSecureName, `shows/${id}`, {
+      public: true,
+      signed: false,
+    });
+
+    if (!uploaded?.url) {
+      throw new AppError('Failed to upload file.', 400);
+    } else {
+      cover = uploaded.url;
+    }
+  }
+
+  const applyValue = (value) =>
+    value === undefined ? undefined : value === null ? null : value;
+
   const updated = await prisma.show.update({
     where: { id },
     data: {
-      title: data.title ?? existingShow.title,
-      alternativeTitle: data.alternativeTitle ?? existingShow.alternativeTitle,
-      synopsis: data.synopsis ?? existingShow.synopsis,
-      type: data.type ?? existingShow.type,
-      difficultyId:
-        data.difficultyId !== undefined ? data.difficultyId : existingShow.difficultyId,
-      seasonId: data.seasonId !== undefined ? data.seasonId : existingShow.seasonId,
+      title: applyValue(data.title),
+      alternativeTitle: applyValue(data.alternativeTitle),
+      cover: applyValue(cover),
+      synopsis: applyValue(data.synopsis),
+      type: applyValue(data.type),
+      difficultyId: applyValue(data.difficultyId),
+      seasonId: applyValue(data.seasonId),
+
       genres:
         data.genreIds !== undefined
-          ? {
-              set: [],
-              connect: data.genreIds.map((id) => ({ id })),
-            }
+          ? data.genreIds === null
+            ? { set: [] }
+            : {
+                set: [],
+                connect: data.genreIds.map((id) => ({ id })),
+              }
           : undefined,
     },
     include: {

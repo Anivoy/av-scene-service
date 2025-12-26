@@ -6,8 +6,15 @@ import { AppError } from '../utils/errorUtility.js';
 import { uploadFiles, deleteFiles, populateSignedUrls } from '../utils/fileUtility.js';
 import { shuffleArray } from '../utils/fisherShuffler.js';
 
-async function createScene(data, files = []) {
+async function createScene(data, files = {}) {
   logger.info('Creating new scene', { name: data.name });
+
+  console.log({
+    files: {
+      snippet: files.snippetFile?.originalname,
+      reference: files.referenceFile?.originalname,
+    },
+  });
 
   const existingScene = await prisma.scene.findFirst({
     where: {
@@ -49,21 +56,21 @@ async function createScene(data, files = []) {
   }
 
   const sceneId = uuidv4();
+  const folder = `scenes/${data.showId}/${sceneId}`;
 
-  let uploadedPaths = [];
-  if (files && files.length > 0) {
-    const filesWithSecureNames = files.map((file) => {
-      const ext = path.extname(file.originalname);
-      return {
-        ...file,
-        originalname: `${uuidv4()}${ext}`,
-      };
-    });
+  let snippetUpload = null;
+  let referenceUpload = null;
 
-    uploadedPaths = await uploadFiles(
-      filesWithSecureNames,
-      `scenes/${data.showId}/${sceneId}`,
-    );
+  if (files.snippetFile) {
+    const ext = path.extname(files.snippetFile.originalname);
+    files.snippetFile.originalname = `${uuidv4()}${ext}`;
+    snippetUpload = await uploadFiles([files.snippetFile], folder);
+  }
+
+  if (files.referenceFile) {
+    const ext = path.extname(files.referenceFile.originalname);
+    files.referenceFile.originalname = `${uuidv4()}${ext}`;
+    referenceUpload = await uploadFiles([files.referenceFile], folder);
   }
 
   try {
@@ -79,13 +86,13 @@ async function createScene(data, files = []) {
         cityId: data.cityId || null,
         prefectureId: data.prefectureId || null,
         regionId: data.regionId || null,
-        images:
-          uploadedPaths.length > 0
+        imagePairs:
+          snippetUpload || referenceUpload
             ? {
-                create: uploadedPaths.map((path, index) => ({
-                  path,
-                  alt: data.imageAlts?.[index] || null,
-                })),
+                create: {
+                  snippetPath: snippetUpload?.[0]?.path || null,
+                  referencePath: referenceUpload?.[0]?.path || null,
+                },
               }
             : undefined,
       },
@@ -95,17 +102,16 @@ async function createScene(data, files = []) {
         city: true,
         prefecture: true,
         region: true,
-        images: true,
+        imagePairs: true,
       },
     });
 
     logger.info('Scene created successfully', { id: scene.id });
     return scene;
   } catch (error) {
-    if (uploadedPaths.length > 0) {
-      logger.warn('Scene creation failed, cleaning up uploaded files');
-      await deleteFiles(uploadedPaths);
-    }
+    logger.warn('Scene creation failed, cleaning up uploaded files');
+    if (snippetUpload) await deleteFiles([snippetUpload[0].path]);
+    if (referenceUpload) await deleteFiles([referenceUpload[0].path]);
     throw error;
   }
 }
@@ -118,8 +124,8 @@ async function getSceneById(id, { minimal = false }) {
   if (minimal) {
     select = {
       id: true,
-      images: {
-        select: { path: true, alt: true },
+      imagePairs: {
+        select: { snippetPath: true, referencePath: true },
       },
     };
   } else {
@@ -152,8 +158,8 @@ async function getSceneById(id, { minimal = false }) {
       region: {
         select: { id: true, name: true },
       },
-      images: {
-        select: { id: true, path: true, alt: true },
+      imagePairs: {
+        select: { id: true, snippetPath: true, referencePath: true },
       },
     };
   }
@@ -169,8 +175,10 @@ async function getSceneById(id, { minimal = false }) {
   }
 
   const result = await populateSignedUrls(scene, {
-    inputField: 'path',
-    outputField: 'url',
+    fields: [
+      { input: 'snippetPath', output: 'snippetUrl' },
+      { input: 'referencePath', output: 'referenceUrl' },
+    ],
     maxDepth: 3,
     cacheTTL: 16 * 3600,
   });
@@ -189,7 +197,7 @@ async function getSceneByIds(ids, { minimal = false }) {
       city: true,
       prefecture: true,
       region: true,
-      images: true,
+      imagePairs: true,
     },
   });
 
@@ -199,8 +207,10 @@ async function getSceneByIds(ids, { minimal = false }) {
   }
 
   const result = await populateSignedUrls(scenes, {
-    inputField: 'path',
-    outputField: 'url',
+    fields: [
+      { input: 'snippetPath', output: 'snippetUrl' },
+      { input: 'referencePath', output: 'referenceUrl' },
+    ],
     maxDepth: 3,
     cacheTTL: 16 * 3600,
   });
@@ -288,8 +298,8 @@ async function listScenes(query, options = {}) {
       },
     }),
     ...(includeImages && {
-      images: {
-        select: { id: true, path: true, alt: true },
+      imagePairs: {
+        select: { id: true, snippetPath: true, referencePath: true },
       },
     }),
   };
@@ -318,7 +328,7 @@ async function listScenes(query, options = {}) {
   };
 }
 
-async function updateScene(id, data, files = []) {
+async function updateScene(id, data, files = {}) {
   logger.info('Updating scene', { id });
 
   const existingScene = await prisma.scene.findUnique({
@@ -329,7 +339,7 @@ async function updateScene(id, data, files = []) {
       city: true,
       prefecture: true,
       region: true,
-      images: true,
+      imagePairs: true,
     },
   });
 
@@ -378,52 +388,28 @@ async function updateScene(id, data, files = []) {
     }
   }
 
-  // Handle new image uploads
-  let uploadedPaths = [];
-  if (files && files.length > 0) {
-    const filesWithSecureNames = req.files.map((file) => {
-      const ext = path.extname(file.originalname);
-      return {
-        ...file,
-        originalname: `${uuidv4()}${ext}`,
-      };
-    });
+  const currentPair = existingScene.imagePairs || null;
+  const folder = `scenes/${data.showId || existingScene.showId}/${id}`;
 
-    uploadedPaths = await uploadFiles(
-      filesWithSecureNames,
-      `scenes/${data.showId || existingScene.showId}/${existingScene.id}`,
-    );
+  let snippetUpload = null;
+  let referenceUpload = null;
+
+  const pathsToDelete = [];
+
+  if (files.snippetFile) {
+    const ext = path.extname(files.snippetFile.originalname);
+    files.snippetFile.originalname = `${uuidv4()}${ext}`;
+    snippetUpload = await uploadFiles([files.snippetFile], folder);
+
+    if (currentPair?.snippetPath) pathsToDelete.push(currentPair.snippetPath);
   }
 
-  // Handle image deletions
-  let pathsToDelete = [];
-  let imageUpdateData;
+  if (files.referenceFile) {
+    const ext = path.extname(files.referenceFile.originalname);
+    files.referenceFile.originalname = `${uuidv4()}${ext}`;
+    referenceUpload = await uploadFiles([files.referenceFile], folder);
 
-  const hasNewImages = uploadedPaths.length > 0;
-  const hasDeletedImages = data.deletedImageIds && data.deletedImageIds.length > 0;
-
-  if (hasDeletedImages || hasNewImages) {
-    imageUpdateData = {};
-
-    // Delete specified images
-    if (hasDeletedImages) {
-      const imagesToDelete = existingScene.images.filter((img) =>
-        data.deletedImageIds.includes(img.id),
-      );
-      pathsToDelete = imagesToDelete.map((img) => img.path);
-
-      imageUpdateData.deleteMany = {
-        id: { in: data.deletedImageIds },
-      };
-    }
-
-    // Add new images
-    if (hasNewImages) {
-      imageUpdateData.create = uploadedPaths.map((path, index) => ({
-        path,
-        alt: data.newImageAlts?.[index] || null,
-      }));
-    }
+    if (currentPair?.referencePath) pathsToDelete.push(currentPair.referencePath);
   }
 
   try {
@@ -442,7 +428,23 @@ async function updateScene(id, data, files = []) {
             ? data.prefectureId
             : existingScene.prefectureId,
         regionId: data.regionId !== undefined ? data.regionId : existingScene.regionId,
-        images: imageUpdateData,
+        ...(snippetUpload || referenceUpload
+          ? {
+              imagePairs: {
+                upsert: {
+                  where: { id: currentPair?.id || '___does_not_exist___' },
+                  create: {
+                    snippetPath: snippetUpload?.[0]?.path || null,
+                    referencePath: referenceUpload?.[0]?.path || null,
+                  },
+                  update: {
+                    ...(snippetUpload && { snippetPath: snippetUpload[0].path }),
+                    ...(referenceUpload && { referencePath: referenceUpload[0].path }),
+                  },
+                },
+              },
+            }
+          : {}),
       },
       include: {
         show: true,
@@ -450,11 +452,10 @@ async function updateScene(id, data, files = []) {
         city: true,
         prefecture: true,
         region: true,
-        images: true,
+        imagePairs: true,
       },
     });
 
-    // Clean up deleted files from file service (after successful DB update)
     if (pathsToDelete.length > 0) {
       await deleteFiles(pathsToDelete);
     }
@@ -463,10 +464,9 @@ async function updateScene(id, data, files = []) {
     return updated;
   } catch (error) {
     // Rollback: delete newly uploaded files if update fails
-    if (uploadedPaths.length > 0) {
-      logger.warn('Scene update failed, cleaning up uploaded files');
-      await deleteFiles(uploadedPaths);
-    }
+    logger.warn('Scene update failed, cleaning up uploaded files');
+    if (snippetUpload) await deleteFiles([snippetUpload[0].path]);
+    if (referenceUpload) await deleteFiles([referenceUpload[0].path]);
     throw error;
   }
 }
@@ -476,7 +476,7 @@ async function deleteScene(id) {
 
   const existingScene = await prisma.scene.findUnique({
     where: { id },
-    include: { images: true },
+    include: { imagePairs: true },
   });
 
   if (!existingScene) {
@@ -484,7 +484,13 @@ async function deleteScene(id) {
     throw new AppError('Scene not found', 404);
   }
 
-  const imagePaths = existingScene.images.map((img) => img.path);
+  const imagePaths = [];
+  if (existingScene.imagePairs?.snippetPath) {
+    imagePaths.push(existingScene.imagePairs.snippetPath);
+  }
+  if (existingScene.imagePairs?.referencePath) {
+    imagePaths.push(existingScene.imagePairs.referencePath);
+  }
 
   await prisma.scene.delete({ where: { id } });
   logger.info('Scene deleted successfully', { id });
@@ -499,16 +505,32 @@ async function deleteScene(id) {
 async function deleteMultipleScenes(ids) {
   logger.info('Deleting multiple scenes', { ids });
 
-  const deleted = await prisma.scene.deleteMany({
+  const scenes = await prisma.scene.findMany({
     where: { id: { in: ids } },
+    include: { imagePairs: true },
   });
 
-  if (!deleted.count) {
+  if (scenes.length === 0) {
     logger.warn('No scenes found with provided IDs');
     throw new AppError('No scenes found with provided IDs', 404);
   }
 
+  const imagePaths = scenes.flatMap((scene) => {
+    const paths = [];
+    if (scene.imagePairs?.snippetPath) paths.push(scene.imagePairs.snippetPath);
+    if (scene.imagePairs?.referencePath) paths.push(scene.imagePairs.referencePath);
+    return paths;
+  });
+
+  const deleted = await prisma.scene.deleteMany({
+    where: { id: { in: ids } },
+  });
+
   logger.info('Scenes deleted successfully', { deletedCount: deleted.count });
+
+  if (imagePaths.length > 0) {
+    await deleteFiles(imagePaths);
+  }
 
   return {
     message: `${deleted.count} scene(s) deleted successfully`,
@@ -563,7 +585,7 @@ export async function getRandomScenes(params) {
       city: true,
       prefecture: true,
       region: true,
-      images: true,
+      imagePairs: true,
     },
     orderBy: { randomKey: directionUp ? 'asc' : 'desc' },
     take: count * overFetchMultiplier,
@@ -583,7 +605,7 @@ export async function getRandomScenes(params) {
         city: true,
         prefecture: true,
         region: true,
-        images: true,
+        imagePairs: true,
       },
       orderBy: { randomKey: directionUp ? 'asc' : 'desc' },
       take: remaining,
@@ -625,8 +647,10 @@ export async function getRandomScenes(params) {
   }
 
   const result = await populateSignedUrls(selected, {
-    inputField: 'path',
-    outputField: 'url',
+    fields: [
+      { input: 'snippetPath', output: 'snippetUrl' },
+      { input: 'referencePath', output: 'referenceUrl' },
+    ],
     maxDepth: 3,
     cacheTTL: 16 * 3600,
   });

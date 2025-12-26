@@ -10,8 +10,7 @@ import {
 export async function createShow(req, res, next) {
   try {
     const validatedData = createShowSchema.parse(req.body);
-
-    const show = await showService.createShow(validatedData);
+    const show = await showService.createShow(validatedData, req.file);
 
     return res.status(201).json({
       success: true,
@@ -75,7 +74,7 @@ export async function updateShow(req, res, next) {
 
     const validatedData = updateShowSchema.parse(req.body);
 
-    const show = await showService.updateShow(validatedId, validatedData);
+    const show = await showService.updateShow(validatedId, validatedData, req.file);
 
     return res.status(200).json({
       success: true,

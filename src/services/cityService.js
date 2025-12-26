@@ -1,4 +1,4 @@
-import prisma from "../db/index.js"
+import prisma from '../db/index.js';
 
 import { logger } from '../config/logger.js';
 import { AppError } from '../utils/errorUtility.js';
@@ -31,6 +31,18 @@ async function getCityById(id) {
 
   const city = await prisma.city.findUnique({
     where: { id },
+    select: {
+      id: true,
+      name: true,
+      createdAt: true,
+      updatedAt: true,
+      prefecture: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+    },
   });
 
   if (!city) {
@@ -46,6 +58,18 @@ async function getCityByIds(ids) {
 
   const cities = await prisma.city.findMany({
     where: { id: { in: ids } },
+    select: {
+      id: true,
+      name: true,
+      createdAt: true,
+      updatedAt: true,
+      prefecture: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+    },
   });
 
   if (!cities.length) {
@@ -63,21 +87,49 @@ async function listCities(query) {
     search = '',
     sortBy = 'createdAt',
     sortOrder = 'desc',
+    prefectureId,
   } = query;
 
-  const skip = (page - 1) * limit;
+  const fetchAll = !limit || limit === 0;
+  
+  const where = {};
 
-  const where = search
-    ? {
-        OR: [
-          { name: { contains: search, mode: 'insensitive' } },
-        ],
-      }
-    : {};
+  if (search) {
+    where.OR = [
+      { name: { contains: search, mode: 'insensitive' } },
+    ];
+  }
+
+  if (prefectureId) {
+    where.prefectureId = prefectureId;
+  }
+
+  if (fetchAll) {
+    const cities = await prisma.city.findMany({
+      where,
+      orderBy: { [sortBy]: sortOrder },
+    });
+
+    return { data: cities };
+  }
+
+  const skip = (page - 1) * limit;
 
   const [cities, total] = await Promise.all([
     prisma.city.findMany({
       where,
+      select: {
+        id: true,
+        name: true,
+        createdAt: true,
+        updatedAt: true,
+        prefecture: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
       orderBy: { [sortBy]: sortOrder },
       skip,
       take: limit,
@@ -115,7 +167,7 @@ async function updateCity(id, data) {
     where: { id },
     data: {
       name: data.name ?? city.name,
-      prefectureId: data.prefectureId ?? city.prefectureId
+      prefectureId: data.prefectureId ?? city.prefectureId,
     },
   });
 

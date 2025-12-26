@@ -10,7 +10,10 @@ import {
 export async function createScene(req, res, next) {
   try {
     const validatedData = createSceneSchema.parse(req.body);
-    const scene = await sceneService.createScene(validatedData, req.files);
+    const scene = await sceneService.createScene(validatedData, {
+      snippetFile: req.files?.snippet?.[0] || null,
+      referenceFile: req.files?.reference?.[0] || null,
+    });
     return res.status(201).json({
       success: true,
       message: 'Scene created successfully',
@@ -67,7 +70,10 @@ export async function updateScene(req, res, next) {
   try {
     const validatedId = idParamSchema.parse(req.params.id);
     const validatedData = updateSceneSchema.parse(req.body);
-    const scene = await sceneService.updateScene(validatedId, validatedData, req.files);
+    const scene = await sceneService.updateScene(validatedId, validatedData, {
+      snippetFile: req.files?.snippet?.[0] || null,
+      referenceFile: req.files?.reference?.[0] || null,
+    });
     return res.status(200).json({
       success: true,
       message: 'Scene updated successfully',

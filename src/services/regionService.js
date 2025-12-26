@@ -1,4 +1,4 @@
-import prisma from "../db/index.js"
+import prisma from '../db/index.js';
 
 import { logger } from '../config/logger.js';
 import { AppError } from '../utils/errorUtility.js';
@@ -65,16 +65,24 @@ async function listRegions(query) {
     sortOrder = 'desc',
   } = query;
 
-  const skip = (page - 1) * limit;
+  const fetchAll = !limit || limit === 0;
 
   const where = search
     ? {
-        OR: [
-          { name: { contains: search, mode: 'insensitive' } },
-          { description: { contains: search, mode: 'insensitive' } },
-        ],
+        name: { contains: search, mode: 'insensitive' },
       }
     : {};
+
+  if (fetchAll) {
+    const regions = await prisma.region.findMany({
+      where,
+      orderBy: { [sortBy]: sortOrder },
+    });
+
+    return { data: regions };
+  }
+
+  const skip = (page - 1) * limit;
 
   const [regions, total] = await Promise.all([
     prisma.region.findMany({

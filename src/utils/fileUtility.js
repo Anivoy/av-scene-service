@@ -7,11 +7,68 @@ import { serviceConfig } from '../config/env.js';
 import { redisClient } from '../config/redis.js';
 
 /**
+ * Upload a single file to file service
+ * @param {Object} file - Single file object from multer
+ * @param {String} destination - Target folder on file server
+ * @returns {Promise<String>} Uploaded file path
+ */
+export async function uploadFile(
+  file,
+  destination,
+  options = { public: false, signed: true },
+) {
+  if (!file) {
+    throw new Error('No file provided.');
+  }
+
+  try {
+    logger.info('Uploading file to file service', { filename: file.originalname });
+
+    const formData = new FormData();
+    formData.append('file', file.buffer, {
+      filename: file.originalname,
+      contentType: file.mimetype,
+    });
+
+    const response = await axios.post(
+      `${serviceConfig.FILE_SERVICE_URL}/api/v1/file/upload`,
+      formData,
+      {
+        headers: {
+          ...formData.getHeaders(),
+        },
+        params: {
+          destination,
+          ...options,
+        },
+      },
+    );
+
+    const result = response.data.data;
+
+    logger.info('File uploaded successfully', { path: result.path });
+
+    return result;
+  } catch (error) {
+    const status = error.response?.status || 500;
+    const message =
+      error.response?.data?.message || error.message || 'Failed to upload file';
+
+    logger.error('Error uploading file', { message, status });
+    throw new AppError(message, status);
+  }
+}
+
+/**
  * Upload files to file service
  * @param {Array} files - Array of file objects from multer
  * @returns {Promise<Array>} Array of uploaded file paths
  */
-export async function uploadFiles(files, destination) {
+export async function uploadFiles(
+  files,
+  destination,
+  options = { public: false, signed: true },
+) {
   if (!files || files.length === 0) {
     return [];
   }
@@ -36,18 +93,16 @@ export async function uploadFiles(files, destination) {
         },
         params: {
           destination,
-          public: false,
-          signed: true,
+          ...options,
         },
       },
     );
 
-    const result = response.data;
-    const paths = result.data.map((file) => file.path);
+    const result = response.data.data;
 
-    logger.info('Files uploaded successfully', { paths });
+    logger.info('Files uploaded successfully', { count: result?.length || 0 });
 
-    return paths;
+    return result;
   } catch (error) {
     const status = error.response?.status || 500;
     const message =
@@ -74,8 +129,8 @@ export async function deleteFiles(paths) {
     await axios.delete(`${serviceConfig.FILE_SERVICE_URL}/api/v1/file`, {
       headers: { 'Content-Type': 'application/json' },
       data: {
-        paths
-      }
+        paths,
+      },
     });
 
     logger.info('Files deleted successfully', { paths });
@@ -90,7 +145,7 @@ export async function deleteFiles(paths) {
 /**
  * Populates objects with signed URLs by converting file paths to signed URLs
  * Uses Redis caching to minimize requests to the file service
- * 
+ *
  * @param {*} data - The data to populate (object or array)
  * @param {Object} options - Configuration options
  * @param {string} [options.inputField='path'] - The field name containing the file path
@@ -99,24 +154,28 @@ export async function deleteFiles(paths) {
  * @param {number} [options.cacheTTL=3600] - Cache TTL in seconds (default 1 hour)
  * @returns {Promise<*>} The data with signed URLs populated
  */
-export async function populateSignedUrls(data, options) {
+export async function populateSignedUrls(data, options = {}) {
   const {
+    fields,
     inputField = 'path',
     outputField = 'url',
     maxDepth = 10,
     cacheTTL = 3600,
   } = options;
 
+  // Normalize field mappings — always treat as an array
+  const fieldMappings = fields?.length
+    ? fields.map((f) => ({ input: f.input, output: f.output }))
+    : [{ input: inputField, output: outputField }];
+
   const pathsToFetch = new Set();
-  const pathLocations = [];
+  const pathLocations = []; // Array: { obj, fieldMapping, path }
 
   /**
-   * Recursively search for path fields in the object
+   * Recursively find matching input fields (multiple)
    */
   function findPaths(obj, currentDepth = 0) {
-    if (obj == null || currentDepth > maxDepth) {
-      return;
-    }
+    if (obj == null || currentDepth > maxDepth) return;
 
     if (Array.isArray(obj)) {
       obj.forEach((item) => findPaths(item, currentDepth));
@@ -124,22 +183,26 @@ export async function populateSignedUrls(data, options) {
     }
 
     if (typeof obj === 'object') {
-      if (inputField in obj && typeof obj[inputField] === 'string') {
-        const path = obj[inputField];
-        if (path) {
-          pathsToFetch.add(path);
-          pathLocations.push({ obj, path });
+      for (const mapping of fieldMappings) {
+        const { input } = mapping;
+
+        if (input in obj && typeof obj[input] === 'string') {
+          const path = obj[input];
+
+          if (path) {
+            pathsToFetch.add(path);
+            pathLocations.push({ obj, fieldMapping: mapping, path });
+          }
         }
       }
 
       if (currentDepth < maxDepth) {
-        Object.values(obj).forEach((value) => {
-          findPaths(value, currentDepth + 1);
-        });
+        Object.values(obj).forEach((value) => findPaths(value, currentDepth + 1));
       }
     }
   }
 
+  // Begin scanning
   findPaths(data);
 
   if (pathsToFetch.size === 0) {
@@ -147,24 +210,25 @@ export async function populateSignedUrls(data, options) {
   }
 
   const pathToUrlMap = new Map();
-
   const uncachedPaths = [];
   const pathsArray = Array.from(pathsToFetch);
-  
+
+  /**
+   * Redis batch lookup
+   */
   try {
     const pipeline = redisClient.pipeline();
-    
-    pathsArray.forEach(path => {
+
+    pathsArray.forEach((path) => {
       pipeline.get(`signed_url:${path}`);
     });
-    
+
     const results = await pipeline.exec();
-    
+
     pathsArray.forEach((path, index) => {
       const [error, cachedUrl] = results[index];
-      
+
       if (error) {
-        logger.error(`Error checking cache for path ${path}:`, { error });
         uncachedPaths.push(path);
       } else if (cachedUrl) {
         pathToUrlMap.set(path, cachedUrl);
@@ -173,43 +237,45 @@ export async function populateSignedUrls(data, options) {
       }
     });
   } catch (error) {
-    logger.error('Error checking cache with pipeline:', { error });
+    logger.error('Error checking Redis pipeline:', { error });
     uncachedPaths.push(...pathsArray);
   }
 
+  /**
+   * Fetch uncached paths from file service
+   */
   if (uncachedPaths.length > 0) {
     try {
-      const response = await axios.post(
-        `${serviceConfig.FILE_SERVICE_URL}/api/v1/file`,
-        { 
-          paths: uncachedPaths,
-          signed: true,
-          public: false
-        }
-      );
+      const response = await axios.post(`${serviceConfig.FILE_SERVICE_URL}/api/v1/file`, {
+        paths: uncachedPaths,
+        signed: true,
+        public: false,
+      });
 
-      const signedUrls = response?.data?.data;
+      const signedUrls = response?.data?.data || [];
 
       for (const item of signedUrls) {
-        const { path, url } = item;
-        pathToUrlMap.set(path, url);
+        pathToUrlMap.set(item.path, item.url);
 
         try {
-          await redisClient.setex(`signed_url:${path}`, cacheTTL, url);
-        } catch (error) {
-          console.error(`Error caching signed URL for path ${path}:`, error);
+          await redisClient.setex(`signed_url:${item.path}`, cacheTTL, item.url);
+        } catch (err) {
+          logger.warn('Redis caching error', { path: item.path, err });
         }
       }
-    } catch (error) {
-      console.error('Error fetching signed URLs from file service:', error);
+    } catch (err) {
+      logger.error('Error fetching signed URLs:', err);
       throw new Error('Failed to fetch signed URLs');
     }
   }
 
-  for (const { obj, path } of pathLocations) {
+  /**
+   * Apply mapped URL fields
+   */
+  for (const { obj, fieldMapping, path } of pathLocations) {
     const signedUrl = pathToUrlMap.get(path);
     if (signedUrl) {
-      obj[outputField] = signedUrl;
+      obj[fieldMapping.output] = signedUrl; // dynamic output field
     }
   }
 
@@ -218,12 +284,12 @@ export async function populateSignedUrls(data, options) {
 
 /**
  * Clear cached signed URLs by path or pattern
- * 
+ *
  * @param {string|string[]} paths - Single path, array of paths, or pattern (e.g., 'folder/*')
  */
 export async function clearSignedUrlCache(paths) {
   const pathArray = Array.isArray(paths) ? paths : [paths];
-  
+
   for (const path of pathArray) {
     try {
       if (path.includes('*')) {

@@ -13,7 +13,7 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
-const upload = multer({
+export const upload = multer({
   storage,
   fileFilter,
   limits: {
@@ -21,8 +21,6 @@ const upload = multer({
     files: 10,
   },
 });
-
-export const uploadSceneImages = upload.array('images', 10);
 
 export function handleMulterError(err, req, res, next) {
   if (err instanceof multer.MulterError) {

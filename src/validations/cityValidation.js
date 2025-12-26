@@ -19,6 +19,7 @@ export const listCitiesQuerySchema = z.object({
   page: z.string().regex(/^\d+$/).transform(Number).optional().default(1),
   limit: z.string().regex(/^\d+$/).transform(Number).optional().default(10),
   search: z.string().optional(),
+  prefectureId: z.uuid().optional(),
   sortBy: z.enum(['name', 'createdAt', 'updatedAt']).optional().default('createdAt'),
   sortOrder: z.enum(['asc', 'desc']).optional().default('desc'),
 });

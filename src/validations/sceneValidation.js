@@ -9,11 +9,7 @@ export const createSceneSchema = z.object({
   difficultyId: z.uuid('Invalid difficulty ID'),
   cityId: z.uuid('Invalid city ID').optional().nullable(),
   prefectureId: z.uuid('Invalid prefecture ID').optional().nullable(),
-  regionId: z.uuid('Invalid region ID').optional().nullable(),
-  imageAlts: z
-    .array(z.string().optional())
-    .optional()
-    .transform((val) => val || []),
+  regionId: z.uuid('Invalid region ID').optional().nullable()
 });
 
 export const updateSceneSchema = z.object({
@@ -26,14 +22,6 @@ export const updateSceneSchema = z.object({
   cityId: z.uuid('Invalid city ID').optional().nullable(),
   prefectureId: z.uuid('Invalid prefecture ID').optional().nullable(),
   regionId: z.uuid('Invalid region ID').optional().nullable(),
-  newImageAlts: z
-    .array(z.string().optional())
-    .optional()
-    .transform((val) => val || []),
-  deletedImageIds: z
-    .array(z.uuid('Invalid image ID'))
-    .optional()
-    .transform((val) => val || []),
 });
 
 export const listScenesQuerySchema = z.object({

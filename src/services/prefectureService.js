@@ -1,4 +1,4 @@
-import prisma from "../db/index.js"
+import prisma from '../db/index.js';
 
 import { logger } from '../config/logger.js';
 import { AppError } from '../utils/errorUtility.js';
@@ -31,6 +31,18 @@ async function getPrefectureById(id) {
 
   const prefecture = await prisma.prefecture.findUnique({
     where: { id },
+    select: {
+      id: true,
+      name: true,
+      createdAt: true,
+      updatedAt: true,
+      region: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+    },
   });
 
   if (!prefecture) {
@@ -46,6 +58,18 @@ async function getPrefectureByIds(ids) {
 
   const prefectures = await prisma.prefecture.findMany({
     where: { id: { in: ids } },
+    select: {
+      id: true,
+      name: true,
+      createdAt: true,
+      updatedAt: true,
+      region: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+    },
   });
 
   if (!prefectures.length) {
@@ -63,21 +87,49 @@ async function listPrefectures(query) {
     search = '',
     sortBy = 'createdAt',
     sortOrder = 'desc',
+    regionId,
   } = query;
 
-  const skip = (page - 1) * limit;
+  const fetchAll = !limit || limit === 0;
 
-  const where = search
-    ? {
-        OR: [
-          { name: { contains: search, mode: 'insensitive' } },
-        ],
-      }
-    : {};
+  const where = {};
+
+  if (search) {
+    where.OR = [
+      { name: { contains: search, mode: 'insensitive' } },
+    ];
+  }
+
+  if (regionId) {
+    where.regionId = regionId;
+  }
+
+  if (fetchAll) {
+    const prefectures = await prisma.prefecture.findMany({
+      where,
+      orderBy: { [sortBy]: sortOrder },
+    });
+
+    return { data: prefectures };
+  }
+
+  const skip = (page - 1) * limit;
 
   const [prefectures, total] = await Promise.all([
     prisma.prefecture.findMany({
       where,
+      select: {
+        id: true,
+        name: true,
+        createdAt: true,
+        updatedAt: true,
+        region: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
       orderBy: { [sortBy]: sortOrder },
       skip,
       take: limit,
@@ -115,7 +167,7 @@ async function updatePrefecture(id, data) {
     where: { id },
     data: {
       name: data.name ?? prefecture.name,
-      regionId: data.regionId ?? prefecture.regionId
+      regionId: data.regionId ?? prefecture.regionId,
     },
   });
 
@@ -142,7 +194,8 @@ async function deleteMultiplePrefectures(ids) {
     where: { id: { in: ids } },
   });
 
-  if (result.count === 0) throw new AppError('No prefectures found with provided IDs', 404);
+  if (result.count === 0)
+    throw new AppError('No prefectures found with provided IDs', 404);
 
   logger.info('Prefectures deleted successfully', { deletedCount: result.count });
 
