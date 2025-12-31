@@ -147,7 +147,7 @@ async function getSceneById(id, { minimal = false }) {
         },
       },
       difficulty: {
-        select: { id: true, name: true, colorCode: true },
+        select: { id: true, name: true, colorCode: true, multiplier: true },
       },
       city: {
         select: { id: true, name: true },
@@ -191,14 +191,39 @@ async function getSceneByIds(ids, { minimal = false }) {
 
   const scenes = await prisma.scene.findMany({
     where: { id: { in: ids } },
-    include: {
-      show: true,
-      difficulty: true,
-      city: true,
-      prefecture: true,
-      region: true,
-      imagePairs: true,
-    },
+    select: {
+      id: true,
+      name: true,
+      description: true,
+      latitude: true,
+      longitude: true,
+      show: {
+        select: {
+          id: true,
+          title: true,
+          alternativeTitle: true,
+          synopsis: true,
+          genres: {
+            select: { id: true, name: true },
+          },
+        },
+      },
+      difficulty: {
+        select: { id: true, name: true, colorCode: true, multiplier: true },
+      },
+      city: {
+        select: { id: true, name: true },
+      },
+      prefecture: {
+        select: { id: true, name: true },
+      },
+      region: {
+        select: { id: true, name: true },
+      },
+      imagePairs: {
+        select: { id: true, snippetPath: true, referencePath: true },
+      },
+    }
   });
 
   if (!scenes.length) {
