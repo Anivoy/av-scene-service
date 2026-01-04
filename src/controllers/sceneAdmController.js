@@ -41,8 +41,11 @@ export async function listScenes(req, res, next) {
 export async function getSceneById(req, res, next) {
   try {
     const validatedId = idParamSchema.parse(req.params.id);
+    
     const minimal = req.query.minimal === 'true';
-    const result = await sceneService.getSceneById(validatedId, { minimal });
+    const includeShowCover = req.query.includeShowCover === "true";
+
+    const result = await sceneService.getSceneById(validatedId, { minimal, includeShowCover });
     return res.status(200).json({
       success: true,
       data: result,
@@ -55,8 +58,11 @@ export async function getSceneById(req, res, next) {
 export async function getSceneByIds(req, res, next) {
   try {
     const validatedIds = idsParamSchema.parse(req.body.ids);
+
     const minimal = req.query.minimal === 'true';
-    const result = await sceneService.getSceneByIds(validatedIds, { minimal });
+    const includeShowCover = req.query.includeShowCover === "true";
+
+    const result = await sceneService.getSceneByIds(validatedIds, { minimal, includeShowCover });
     return res.status(200).json({
       success: true,
       data: result,
