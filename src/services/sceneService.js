@@ -116,7 +116,7 @@ async function createScene(data, files = {}) {
   }
 }
 
-async function getSceneById(id, { minimal = false }) {
+async function getSceneById(id, { minimal = false, includeShowCover = false }) {
   logger.info('Fetching scene by id', { id, minimal });
 
   let select;
@@ -144,6 +144,7 @@ async function getSceneById(id, { minimal = false }) {
           genres: {
             select: { id: true, name: true },
           },
+          ...(includeShowCover ? { cover: true } : {}),
         },
       },
       difficulty: {
@@ -186,7 +187,7 @@ async function getSceneById(id, { minimal = false }) {
   return result;
 }
 
-async function getSceneByIds(ids, { minimal = false }) {
+async function getSceneByIds(ids, { minimal = false, includeShowCover = false }) {
   logger.info('Fetching scenes by ids', { ids, minimal });
 
   const scenes = await prisma.scene.findMany({
@@ -206,6 +207,7 @@ async function getSceneByIds(ids, { minimal = false }) {
           genres: {
             select: { id: true, name: true },
           },
+          ...(includeShowCover ? { cover: true } : {}),
         },
       },
       difficulty: {
@@ -223,7 +225,7 @@ async function getSceneByIds(ids, { minimal = false }) {
       imagePairs: {
         select: { id: true, snippetPath: true, referencePath: true },
       },
-    }
+    },
   });
 
   if (!scenes.length) {
